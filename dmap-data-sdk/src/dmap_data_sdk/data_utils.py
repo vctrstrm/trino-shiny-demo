@@ -600,18 +600,22 @@ class dmapProdCatalogPlatform(DataPlatform):
         return data
 
     def _get_entry(self, rid: str, branch: str = "master") -> Dict[str, Any]:
-        try:
-            if branch not in self.catalog[rid]:
-                raise KeyError(
-                    f"Branch '{branch}' not found for RID '{rid}' in local catalog {self.catalog_path}. "
-                    f"Available branches: {', '.join(sorted(self.catalog[rid].keys()))}"
-                )
-            return self.catalog[rid][branch]
-        except KeyError:
+        # First: validate RID
+        if rid not in self.catalog:
             raise KeyError(
                 f"RID '{rid}' not found in local catalog {self.catalog_path}. "
                 f"Available: {', '.join(sorted(self.catalog.keys()))}"
             )
+
+        # Then: validate branch under that RID
+        rid_entry = self.catalog[rid]
+        if branch not in rid_entry:
+            raise KeyError(
+                f"Branch '{branch}' not found for RID '{rid}' in local catalog {self.catalog_path}. "
+                f"Available branches: {', '.join(sorted(rid_entry.keys()))}"
+            )
+
+        return rid_entry[branch]
 
     def _build_spark(self, local_tmp=None) -> SparkSession:
         if local_tmp is None:
