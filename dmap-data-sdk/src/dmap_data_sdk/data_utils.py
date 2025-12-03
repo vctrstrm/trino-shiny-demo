@@ -55,6 +55,7 @@ sink.record(LineageRecord(
 """
 
 from __future__ import annotations
+import os
 from dataclasses import dataclass
 from typing import Optional, Dict, Any, List
 from abc import ABC, abstractmethod
@@ -565,6 +566,258 @@ class IcebergLineageSink(LineageSink):
             f"INSERT INTO {self.full_table} VALUES (" + ", ".join(vals) + ")"
         )
 
+# ============================================================
+# DMAP prod data plafrom abstraction
+# ============================================================
+
+class dmapProdCatalogPlatform(DataPlatform):
+    """Abstract base class for all data platform integrations.
+
+    Engines must implement minimal primitives to enable branch/timestamp reads,
+    writes, and concrete snapshot resolution for lineage.
+    """
+
+    def __init__(self, spark: SparkSession, config_path: str, branch: str = "master"):
+        self.config_path = config_path
+        self.config = self._load_catalog(config_path)
+        self.catalog_path = self.config["CATALOG_PATH"]
+
+        # build spark using config values, not catalog
+        if spark is None:
+            self.spark = self._build_spark(local_tmp=self.config["TMP_PATH"])
+        else:
+            self.spark = spark
+
+        # now load the actual data registry catalog.json
+        self.catalog = self._load_catalog(self.catalog_path)   # no branch arg here
+        self.default_branch_name = branch
+
+    def _load_catalog(self, path: str) -> Dict[str, Any]:
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Local catalog.json not found at {path}")
+        with open(path, "r") as f:
+            data = json.load(f) or {}
+        return data
+
+    def _get_entry(self, rid: str, branch: str = "master") -> Dict[str, Any]:
+        try:
+            if branch not in self.catalog[rid]:
+                raise KeyError(
+                    f"Branch '{branch}' not found for RID '{rid}' in local catalog {self.catalog_path}. "
+                    f"Available branches: {', '.join(sorted(self.catalog[rid].keys()))}"
+                )
+            return self.catalog[rid][branch]
+        except KeyError:
+            raise KeyError(
+                f"RID '{rid}' not found in local catalog {self.catalog_path}. "
+                f"Available: {', '.join(sorted(self.catalog.keys()))}"
+            )
+
+    def _build_spark(self, local_tmp=None) -> SparkSession:
+        if local_tmp is None:
+            local_tmp = self.config['TMP_PATH']
+        conda_lib = os.environ.get("CONDA_PREFIX", self.config['CONDA_PATH']) + "/lib"
+        os.makedirs(local_tmp, exist_ok=True)
+        return (
+            SparkSession.builder
+            .appName("DataRegistrySampler")
+            .config("spark.driver.memory", "10g")
+            .config("spark.sql.parquet.compression.codec", "gzip")
+            .config("spark.driver.extraLibraryPath", f"{conda_lib}:/lib64")
+            .config("spark.executor.extraLibraryPath", f"{conda_lib}:/lib64")
+            .config("spark.driverEnv.LD_LIBRARY_PATH", f"{conda_lib}:/lib64")
+            .config("spark.executorEnv.LD_LIBRARY_PATH", f"{conda_lib}:/lib64")
+            .config("spark.local.dir", local_tmp)
+            .config("spark.executor.extraJavaOptions", f"-Djava.io.tmpdir={local_tmp}")
+            .config("spark.driver.extraJavaOptions",  f"-Djava.io.tmpdir={local_tmp}")
+            .getOrCreate()
+        )
+
+    # ---------- Custom schema → StructType ----------
+    def _init_spark_types(self) -> None:
+        """
+        Lazily import pyspark.sql.types so the module can be imported without
+        pyspark, but this platform class only works when pyspark is available.
+        """
+        try:
+            from pyspark.sql.types import (
+                StructType, StructField,
+                StringType, IntegerType, LongType, ShortType, ByteType,
+                DoubleType, FloatType, DecimalType,
+                BooleanType, TimestampType, DateType, BinaryType,
+                ArrayType, MapType,
+            )
+            import re
+        except Exception as e:
+            raise RuntimeError(
+                "pyspark is required to use dmapProdCatalogPlatform"
+            ) from e
+
+        # Attach types and regex to self so other methods can use them
+        self.StructType = StructType
+        self.StructField = StructField
+        self.StringType = StringType
+        self.IntegerType = IntegerType
+        self.LongType = LongType
+        self.ShortType = ShortType
+        self.ByteType = ByteType
+        self.DoubleType = DoubleType
+        self.FloatType = FloatType
+        self.DecimalType = DecimalType
+        self.BooleanType = BooleanType
+        self.TimestampType = TimestampType
+        self.DateType = DateType
+        self.BinaryType = BinaryType
+        self.ArrayType = ArrayType
+        self.MapType = MapType
+        self._decimal_re = re.compile(r"DECIMAL\((\d+)\s*,\s*(\d+)\)", re.IGNORECASE)
+
+    def _to_dtype(self, entry):
+
+        self._init_spark_types()
+
+        if not isinstance(entry, dict) or "type" not in entry:
+            raise ValueError(f"Invalid schema entry: {entry}")
+
+        # If entry["type"] is a dict (e.g., {"type":"STRUCT","subSchemas":[...]}), merge it into entry
+        t = entry.get("type")
+        while isinstance(t, dict) and "type" in t:
+            merged = dict(entry)
+            inner = dict(t)
+            # pull inner keys (type, subSchemas, arraySubtype, mapKeyType, mapValueType, etc.) up
+            merged.update(inner)
+            entry = merged
+            t = entry.get("type")
+
+        if not isinstance(t, str):
+            raise ValueError(f"Unrecognized 'type' payload: {t!r}")
+        t = t.upper()
+
+        # DECIMAL(p, s)
+        m = self._decimal_re.fullmatch(t)
+        if m:
+            return self.DecimalType(int(m.group(1)), int(m.group(2)))
+
+        scalars = {
+            "STRING": self.StringType(),
+            "INT": self.IntegerType(), "INTEGER": self.IntegerType(),
+            "BIGINT": self.LongType(), "LONG": self.LongType(),
+            "SMALLINT": self.ShortType(),
+            "TINYINT": self.ByteType(),
+            "DOUBLE": self.DoubleType(),
+            "FLOAT": self.FloatType(),
+            "BOOLEAN": self.BooleanType(),
+            "TIMESTAMP": self.TimestampType(),
+            "DATE": self.DateType(),
+            "BINARY": self.BinaryType(),
+        }
+        if t in scalars:
+            return scalars[t]
+
+        if t == "ARRAY":
+            subtype = entry.get("arraySubtype")
+            if not subtype:
+                raise ValueError("ARRAY requires 'arraySubtype'.")
+            if isinstance(subtype, dict):
+                return self.ArrayType(self._to_dtype(subtype))
+            else:
+                return self.ArrayType(self._to_dtype({"type": subtype}))
+
+        if t == "MAP":
+            k = entry.get("mapKeyType")
+            v = entry.get("mapValueType")
+            if not k or not v:
+                raise ValueError("MAP requires 'mapKeyType' and 'mapValueType'.")
+            k_entry = k if isinstance(k, dict) else {"type": k}
+            v_entry = v if isinstance(v, dict) else {"type": v}
+            return self.MapType(self._to_dtype(k_entry), self._to_dtype(v_entry))
+
+        if t == "STRUCT":
+            subs = entry.get("subSchemas") or entry.get("fields")
+            if not subs or not isinstance(subs, list):
+                raise ValueError("STRUCT requires 'subSchemas' (list).")
+            return self._to_struct(subs)
+
+        raise ValueError(f"Unsupported type: {t}")
+
+
+    def _to_struct(self, entries: List[Dict[str, Any]]):
+        fields = []
+        for e in entries:
+            name = e["name"]
+            dtype = self._to_dtype(e)
+            nullable = bool(e.get("nullable", True))
+            meta = e.get("customMetadata") or {}
+            fields.append(self.StructField(name, dtype, nullable, metadata=meta))
+        return self.StructType(fields)
+
+    def _load_custom_schema(self, schema_path: str):
+        with open(schema_path, "r") as f:
+            data = json.load(f)
+
+        if isinstance(data, dict) and "fields" in data and data.get("type") == "struct":
+            return self.StructType.fromJson(data)
+        if isinstance(data, list):
+            return self._to_struct(data)
+
+        raise ValueError("Schema JSON must be either a StructType object or a list of column entries.")
+
+    # ---------- DataPlatform interface ----------
+
+    def read_table(
+        self,
+        rid: str,
+        branch: str = "master",
+        ref: Optional[Ref] = None,
+        **kwargs,
+    ) -> DataFrame:
+        """
+        Read from local files defined in catalog.json.
+
+        `ref` is currently ignored (no branching/time travel).
+        """
+        entry = self._get_entry(rid, branch)
+        schema_path = entry.get("schema")
+        file_path = entry.get("files")
+
+        schema = self._load_custom_schema(schema_path)
+
+        files_in_dir = os.listdir(file_path)
+        if any(f.endswith(".parquet") for f in files_in_dir):
+            fmt = "parquet"
+        elif any(f.endswith(".csv") for f in files_in_dir):
+            fmt = "csv"
+        elif any(f.endswith(".json") for f in files_in_dir):
+            fmt = "json"
+        else:
+            raise ValueError(
+                f"Could not determine file format in directory '{file_path}' for RID '{rid}'"
+            )
+
+        reader = self.spark.read.format(fmt).schema(schema)
+        df = reader.load(file_path)
+        return df
+
+    def write_table(
+        self,
+        df: DataFrame,
+        table: str,
+        ctx: RunContext,
+        mode: str = "append",
+        extra_snapshot_props: Optional[Dict[str, str]] = None,
+        **kwargs,
+    ) -> WriteResult:
+        # Read-only platform by design
+        raise NotImplementedError("dmapProdCatalogPlatform is read-only")
+
+    def resolve_snapshot_id(self, table: str, ref: Optional[Ref] = None) -> Optional[int]:
+        """
+        No snapshot support for local files → always None.
+        """
+        return None
+
+    def default_branch(self) -> Optional[str]:
+        return None
 
 class NoopLineageSink(LineageSink):
     """Lineage sink that performs no I/O (useful in tests or ad-hoc runs)."""
@@ -967,3 +1220,6 @@ class PlatformFactory:
     def snowflake(session: Any) -> DataPlatform:
         return SnowflakePlatform(session)
 
+    @staticmethod
+    def dmap_prod(spark: SparkSession, config_path: str) -> DataPlatform:
+        return dmapProdCatalogPlatform(spark, config_path)
