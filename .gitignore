@@ -26,6 +26,9 @@ Thumbs.db
 .env
 !.default.env
 
+# local bin dirs
+.bin/
+
 # python files
 __pycache__/
 *.pyc
