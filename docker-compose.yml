@@ -7,6 +7,7 @@ services:
   x-build-trino-image:
     image: &trino-image "${TRINO_IMAGE:-vast-trino:${TRINO_VERSION}}"
     platform: linux/amd64
+    container_name: x-build-trino-image
     build:
       context: ./trino
       dockerfile: Dockerfile
@@ -23,6 +24,7 @@ services:
   x-build-spark-image:
     image: &spark-image "${SPARK_IMAGE:-vast-spark:${SPARK_VERSION:-3.5.7}}"
     platform: linux/amd64
+    container_name: x-build-spark-image
     build:
       context: ./spark
       dockerfile: Dockerfile
@@ -50,7 +52,7 @@ services:
     image: postgres:15
     container_name: postgres
     ports:
-      - "5432:5432"
+      - "${DOCKER_HOST_APP_BIND_ADDR}:5432:5432"
     env_file:
       - path: ./.default.env
         required: true
@@ -85,7 +87,7 @@ services:
       - IS_RESUME=false
       - DB_DRIVER=postgres
     ports:
-      - "9083:9083"
+      - "${DOCKER_HOST_APP_BIND_ADDR}:9083:9083"
     volumes:
       - ./hive-site.xml:/opt/hive/conf/hive-site.xml
       - ./warehouse:/data/warehouse
@@ -117,7 +119,7 @@ services:
         target: /var/nessie/rocksdb
         read_only: false
     ports:
-      - "19120:19120"
+      - "${DOCKER_HOST_APP_BIND_ADDR}:19120:19120"
 
   # Trino Coordinator
   trino:
@@ -131,7 +133,7 @@ services:
       - path: ./.env
         required: false
     ports:
-      - "8081:8080"
+      - "${DOCKER_HOST_APP_BIND_ADDR}:8081:8080"
     volumes:
       - ./trino/config:/etc/trino
       - ./warehouse:/data/warehouse
@@ -143,6 +145,8 @@ services:
       hive-metastore:
         condition: service_started
       x-build-trino-image:
+        condition: service_completed_successfully
+      init-s3local-buckets:
         condition: service_completed_successfully
     networks:
       - iceberg-net
@@ -183,10 +187,9 @@ services:
       - SPARK_MODE=master
       - SPARK_MASTER_HOST=0.0.0.0
     ports:
-      - "8082:8080"  # Spark UI (different from Trino)
-      - "7077:7077"  # Spark Master
+      - "${DOCKER_HOST_APP_BIND_ADDR}:8082:8080"  # Spark UI (different from Trino)
+      - "${DOCKER_HOST_APP_BIND_ADDR}:7077:7077"  # Spark Master
     volumes:
-      - ./warehouse:/data/warehouse
       - ./scripts:/scripts
       - ./hive-site.xml:/opt/spark/conf/hive-site.xml
       - ./jars:/opt/spark/local-jars
@@ -206,6 +209,76 @@ services:
         echo 'Spark Master started, keeping container alive...'
         while true; do sleep 30; done
 
+  s3local:
+    image: rustfs/rustfs:${RUSTFS_VERSION:-latest}
+    container_name: s3local
+    ports:
+      - "${DOCKER_HOST_APP_BIND_ADDR}:9000:9000"
+      - "${DOCKER_HOST_APP_BIND_ADDR}:9001:9001"
+    env_file:
+      - path: ./.default.env
+        required: true
+      - path: ./.env
+        required: false
+    environment:
+      - RUSTFS_VOLUMES=/data/s3local  
+      - RUSTFS_ADDRESS=0.0.0.0:9000
+      - RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001
+      - RUSTFS_EXTERNAL_ADDRESS=:9000  # Same as internal since no port mapping
+      - RUSTFS_CORS_ALLOWED_ORIGINS=*
+      - RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS=*
+      - RUSTFS_ACCESS_KEY=${LOCAL_S3_ACCESS_KEY}
+      - RUSTFS_SECRET_KEY=${LOCAL_S3_SECRET_ACCESS_KEY}
+      - RUSTFS_CONSOLE_ENABLE=true
+    volumes:
+      - s3local-data:/data
+    networks:
+      - iceberg-net
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "sh", "-c",
+          "curl -f http://localhost:9000/health && curl -f http://localhost:9001/rustfs/console/health"
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  init-s3local-buckets:
+    depends_on:
+      s3local:
+        condition: service_healthy
+    image: ${MINIO_IMAGE:-quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z}
+    container_name: init-s3local-buckets
+    environment:
+      - AWS_ACCESS_KEY_ID=${LOCAL_S3_ACCESS_KEY}
+      - AWS_SECRET_ACCESS_KEY=${LOCAL_S3_SECRET_ACCESS_KEY}
+      - AWS_REGION=us-east-1
+      - AWS_DEFAULT_REGION=us-east-1
+    networks:
+      - iceberg-net
+    entrypoint:
+      - "/bin/bash"
+      - "-o"
+      - "pipefail"
+      - "-o"
+      - "errexit"
+      - "-o"
+      - "nounset"
+      - "-c"
+    healthcheck:
+      disable: true
+    command:
+      - |-
+        echo "[START] Creating S3Local buckets: ${LOCAL_ICEBERG_S3_BUCKET_NAME}, ${LOCAL_MISC_S3_BUCKET_NAME}"
+        mc alias set s3local ${LOCAL_S3_DOCKER_INTERNAL_ENDPOINT} ${LOCAL_S3_ACCESS_KEY} ${LOCAL_S3_SECRET_ACCESS_KEY}
+        /usr/bin/mc mb s3local/${LOCAL_ICEBERG_S3_BUCKET_NAME};
+        /usr/bin/mc mb s3local/${LOCAL_MISC_S3_BUCKET_NAME};
+        echo "[DONE] S3Local buckets created: ${LOCAL_ICEBERG_S3_BUCKET_NAME}, ${LOCAL_MISC_S3_BUCKET_NAME}"
+
   # Shiny for Python Frontend
   shiny-app:
     build:
@@ -219,7 +292,7 @@ services:
       - path: ./.env
         required: false
     ports:
-      - "8000:8000"
+      - "${DOCKER_HOST_APP_BIND_ADDR}:8000:8000"
     depends_on:
       - trino
     networks:
@@ -255,6 +328,7 @@ services:
 volumes:
   postgres-data:
   nessie-data:
+  s3local-data:
 
 networks:
   iceberg-net:
