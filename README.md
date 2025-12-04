@@ -452,7 +452,7 @@ SELECT name, type FROM "products$refs" WHERE type = 'BRANCH';
 ```bash
 # Spark SQL: Create a branch (from Spark container)
 docker exec spark-iceberg /opt/spark/bin/spark-sql \
-  --jars /opt/spark/jars/iceberg-spark-runtime-3.5_2.12-1.4.2.jar \
+  --jars /opt/spark/custom-jars/iceberg-spark-runtime-3.5_2.13-1.10.0.jar \
   -e "ALTER TABLE iceberg.demo.products CREATE BRANCH dev;"
 ```
 

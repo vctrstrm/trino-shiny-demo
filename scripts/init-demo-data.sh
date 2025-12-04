@@ -159,7 +159,7 @@ if [[ $TABLE_RESULT == *"CREATE TABLE"* ]]; then
         # Create dev branch using Spark (fix root cause: add explicit warehouse config)
         echo "   → Creating dev branch with Spark..."
         SPARK_BRANCH_RESULT=$(docker exec spark-iceberg /opt/spark/bin/spark-sql \
-            --jars /opt/spark/jars/iceberg-spark-runtime-3.5_2.12-1.4.2.jar \
+            --jars /opt/spark/custom-jars/iceberg-spark-runtime-3.5_2.13-1.10.0.jar \
             --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
             --conf spark.sql.catalog.iceberg=org.apache.iceberg.spark.SparkCatalog \
             --conf spark.sql.catalog.iceberg.type=hive \
@@ -173,7 +173,7 @@ if [[ $TABLE_RESULT == *"CREATE TABLE"* ]]; then
             # Add data to dev branch using Spark
             echo "   → Adding development data to dev branch with Spark..."
             SPARK_INSERT_RESULT=$(docker exec spark-iceberg /opt/spark/bin/spark-sql \
-                --jars /opt/spark/jars/iceberg-spark-runtime-3.5_2.12-1.4.2.jar \
+                --jars /opt/spark/custom-jars/iceberg-spark-runtime-3.5_2.13-1.10.0.jar \
                 --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
                 --conf spark.sql.catalog.iceberg=org.apache.iceberg.spark.SparkCatalog \
                 --conf spark.sql.catalog.iceberg.type=hive \

@@ -33,7 +33,7 @@ echo "   → Executing initialization script in Spark container..."
 
 # Run the Python script in the Spark container with proper Iceberg configuration
 INIT_RESULT=$(docker exec spark-iceberg /opt/spark/bin/spark-submit \
-    --jars /opt/spark/jars/iceberg-spark-runtime-3.5_2.12-1.4.2.jar \
+    --jars /opt/spark/custom-jars/iceberg-spark-runtime-3.5_2.13-1.10.0.jar \
     --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
     --conf spark.sql.catalog.iceberg=org.apache.iceberg.spark.SparkCatalog \
     --conf spark.sql.catalog.iceberg.type=hive \
@@ -88,7 +88,7 @@ echo "🔄 Ready to run transformation:"
 echo "   → Run: make run-ip-sum-pipeline"
 echo "   → Or manually:"
 echo "     docker exec spark-iceberg /opt/spark/bin/spark-submit \\"
-echo "       --jars /opt/spark/jars/iceberg-spark-runtime-3.5_2.12-1.4.2.jar \\"
+echo "       --jars /opt/spark/custom-jars/iceberg-spark-runtime-3.5_2.13-1.10.0.jar \\"
 echo "       --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \\"
 echo "       --conf spark.sql.catalog.iceberg=org.apache.iceberg.spark.SparkCatalog \\"
 echo "       --conf spark.sql.catalog.iceberg.type=hive \\"

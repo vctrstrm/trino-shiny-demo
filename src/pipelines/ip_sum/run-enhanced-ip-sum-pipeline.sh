@@ -71,7 +71,7 @@ echo "   → Configuration: ${CONFIG_FILE}"
 echo "   → Processing with configuration-driven DataPipeline..."
 
 TRANSFORM_RESULT=$(docker exec spark-iceberg /opt/spark/bin/spark-submit \
-    --jars /opt/spark/jars/iceberg-spark-runtime-3.5_2.12-1.4.2.jar \
+    --jars /opt/spark/custom-jars/iceberg-spark-runtime-3.5_2.13-1.10.0.jar \
     --py-files /opt/spark/work-dir/${DATA_UTILS_MODULE} \
     /opt/spark/work-dir/${PYTHON_SCRIPT} ${INPUT_TABLE} ${OUTPUT_TABLE} 2>&1)
 

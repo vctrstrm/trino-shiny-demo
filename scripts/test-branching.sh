@@ -153,7 +153,7 @@ echo "   → Demonstrating successful Spark branching (from init-demo-data.sh):"
 # Test main branch
 echo "   → Main branch product count:"
 SPARK_MAIN_COUNT=$(docker exec spark-iceberg /opt/spark/bin/spark-sql \
-  --jars /opt/spark/jars/iceberg-spark-runtime-3.5_2.12-1.4.2.jar \
+  --jars /opt/spark/custom-jars/iceberg-spark-runtime-3.5_2.13-1.10.0.jar \
   --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
   --conf spark.sql.catalog.iceberg=org.apache.iceberg.spark.SparkCatalog \
   --conf spark.sql.catalog.iceberg.type=hive \
@@ -166,7 +166,7 @@ if [[ ! -z "$SPARK_MAIN_COUNT" && "$SPARK_MAIN_COUNT" =~ ^[0-9]+$ ]]; then
     # Test dev branch
     echo "   → Dev branch product count:"
     SPARK_DEV_COUNT=$(docker exec spark-iceberg /opt/spark/bin/spark-sql \
-      --jars /opt/spark/jars/iceberg-spark-runtime-3.5_2.12-1.4.2.jar \
+      --jars /opt/spark/custom-jars/iceberg-spark-runtime-3.5_2.13-1.10.0.jar \
       --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
       --conf spark.sql.catalog.iceberg=org.apache.iceberg.spark.SparkCatalog \
       --conf spark.sql.catalog.iceberg.type=hive \
