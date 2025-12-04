@@ -134,7 +134,6 @@ services:
       - "8081:8080"
     volumes:
       - ./trino/etc:/etc/trino
-      - ./trino/catalog:/etc/trino/catalog
       - ./warehouse:/data/warehouse
     ulimits:
       nofile:
