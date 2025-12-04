@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Quick development restart script for Trino Demo
 # This script helps with the development workflow

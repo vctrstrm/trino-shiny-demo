@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 echo "🕐 Testing Iceberg Time Travel Functionality..."
 echo "============================================="

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 echo "🧪 Running Comprehensive Iceberg Feature Tests..."
 echo "================================================="
