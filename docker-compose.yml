@@ -163,6 +163,8 @@ services:
         condition: service_started
       x-build-trino-image:
         condition: service_completed_successfully
+    healthcheck:
+      disable: true
     networks:
       - iceberg-net
 
