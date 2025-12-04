@@ -1,11 +1,61 @@
 services:
 
+  ####
+  #### BUILD SERVICES
+  #### -- pseudo services used to build the images
+
+  x-build-trino-image:
+    image: &trino-image "${TRINO_IMAGE:-vast-trino:${TRINO_VERSION}}"
+    platform: linux/amd64
+    build:
+      context: ./trino
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+      args:
+        - TRINO_VERSION=${TRINO_VERSION:-475}
+        - VAST_TRINO_PLUGIN_ZIP_URL=${VAST_TRINO_PLUGIN_ZIP_URL:-https://github.com/vast-data/vast-db-connectors/releases/download/trino-vast-5.4.0-475-e330d19e3523/trino-vast-5.4.0-475-e330d19e3523.zip}
+    network_mode: bridge
+    healthcheck:
+      disable: true
+    command: ["true"]
+
+  x-build-spark-image:
+    image: &spark-image "${SPARK_IMAGE:-vast-spark:${SPARK_VERSION:-3.5.7}}"
+    platform: linux/amd64
+    build:
+      context: ./spark
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+      args:
+        - JAVA_VERSION=${JAVA_VERSION:-21}
+        - NESSIE_VERSION=${NESSIE_VERSION:-0.105.7}
+        - SPARK_VERSION=${SPARK_VERSION:-3.5.7}
+        - UV_VERSION=0.9.15
+        - AWS_CLI_VERSION=2.32.9
+        - PYTHON_VERSION=${PYTHON_VERSION:-3.11}
+        - VAST_SPARK_PLUGIN_ZIP_URL=${VAST_SPARK_PLUGIN_ZIP_URL:-https://github.com/vast-data/vast-db-connectors/releases/download/spark3-vast-3.5.1-e330d19e3523/spark3-vast-3.5.1-e330d19e3523.zip}
+    network_mode: bridge
+    healthcheck:
+      disable: true
+    command: ["true"]
+
+  ####
+  #### RUN SERVICES
+  #### -- actual services that run the stack
+
   # PostgreSQL database for Hive Metastore
   postgres:
     image: postgres:15
     container_name: postgres
     ports:
       - "5432:5432"
+    env_file:
+      - path: ./.default.env
+        required: true
+      - path: ./.env
+        required: false
     environment:
       POSTGRES_DB: metastore
       POSTGRES_USER: hive
@@ -25,6 +75,11 @@ services:
     image: apache/hive:4.0.0
     container_name: hive-metastore
     user: "0:0"
+    env_file:
+      - path: ./.default.env
+        required: true
+      - path: ./.env
+        required: false
     environment:
       - SERVICE_NAME=metastore
       - IS_RESUME=false
@@ -41,11 +96,40 @@ services:
       postgres:
         condition: service_healthy
 
+  # Nessie metastore (alt to hive-metastore); Using embedded database (RocksDB).
+  nessie:
+    image: ghcr.io/projectnessie/nessie:${NESSIE_VERSION:-0.105.7}
+    container_name: nessie
+    user: root
+    env_file:
+      - path: ./.default.env
+        required: true
+      - path: ./.env
+        required: false
+    environment:
+      - NESSIE_VERSION_STORE_TYPE=ROCKSDB
+      - NESSIE_VERSION_STORE_PERSIST_ROCKS_DATABASE_PATH=/var/nessie/rocksdb
+    networks:
+      - iceberg-net
+    volumes:
+      - type: volume
+        source: nessie-data
+        target: /var/nessie/rocksdb
+        read_only: false
+    ports:
+      - "19120:19120"
+
   # Trino Coordinator
   trino:
-    image: trinodb/trino:435
+    image: *trino-image
+    platform: linux/amd64
     container_name: trino
     user: "0:0"
+    env_file:
+      - path: ./.default.env
+        required: true
+      - path: ./.env
+        required: false
     ports:
       - "8081:8080"
     volumes:
@@ -57,25 +141,43 @@ services:
         soft: 65536
         hard: 65536
     depends_on:
-      - hive-metastore
+      hive-metastore:
+        condition: service_started
+      x-build-trino-image:
+        condition: service_completed_successfully
     networks:
       - iceberg-net
 
   # Trino CLI (for easy access)
   trino-cli:
-    image: trinodb/trino:435
+    image: *trino-image
+    platform: linux/amd64
     container_name: trino-cli
+    env_file:
+      - path: ./.default.env
+        required: true
+      - path: ./.env
+        required: false
     entrypoint: ["/bin/bash", "-c", "sleep infinity"]
     depends_on:
-      - trino
+      trino:
+        condition: service_started
+      x-build-trino-image:
+        condition: service_completed_successfully
     networks:
       - iceberg-net
 
   # Apache Spark with Iceberg support for branching
   spark:
-    image: apache/spark:3.5.0
+    image: *spark-image
+    platform: linux/amd64
     container_name: spark-iceberg
     user: "0:0"
+    env_file:
+      - path: ./.default.env
+        required: true
+      - path: ./.env
+        required: false
     environment:
       - SPARK_MODE=master
       - SPARK_MASTER_HOST=0.0.0.0
@@ -90,19 +192,14 @@ services:
     networks:
       - iceberg-net
     depends_on:
-      - hive-metastore
+      hive-metastore:
+        condition: service_started
+      x-build-spark-image:
+        condition: service_completed_successfully
     command:
       - bash
       - -c
       - |
-        echo 'Copying Iceberg JAR from local mount...'
-        if [ -f /opt/spark/jars-local/iceberg-spark-runtime-3.5_2.12-1.4.2.jar ]; then
-          cp /opt/spark/jars-local/iceberg-spark-runtime-3.5_2.12-1.4.2.jar /opt/spark/jars/
-          echo 'Iceberg JAR copied successfully'
-        else
-          echo 'WARNING: Iceberg JAR not found in mount!'
-        fi
-        ls -la /opt/spark/jars/iceberg* || echo 'JAR verification failed'
         echo 'Starting Spark Master...'
         /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master --host 0.0.0.0 --port 7077 --webui-port 8080 &
         echo 'Spark Master started, keeping container alive...'
@@ -115,6 +212,11 @@ services:
       dockerfile: Dockerfile
     image: trino-shiny-app:latest
     container_name: shiny-app
+    env_file:
+      - path: ./.default.env
+        required: true
+      - path: ./.env
+        required: false
     ports:
       - "8000:8000"
     depends_on:
@@ -136,6 +238,11 @@ services:
     container_name: deploy-shiny
     networks:
       - iceberg-net
+    env_file:
+      - path: ./.default.env
+        required: true
+      - path: ./.env
+        required: false
     environment:
       - PYTHONUNBUFFERED=1
       - RSCONNECT_HOME=/root/.rsconnect-python
@@ -146,6 +253,7 @@ services:
 
 volumes:
   postgres-data:
+  nessie-data:
 
 networks:
   iceberg-net:
