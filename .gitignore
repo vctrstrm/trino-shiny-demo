@@ -25,3 +25,14 @@ Thumbs.db
 # env files
 .env
 !.default.env
+
+# python files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pywz
+*.pyzw
+*.pyzwz
