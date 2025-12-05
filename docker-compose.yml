@@ -94,6 +94,11 @@ services:
         read_only: false
     ports:
       - "${DOCKER_HOST_APP_BIND_ADDR}:19120:19120"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/q/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # Trino Coordinator
   trino:
@@ -229,8 +234,8 @@ services:
       - |-
         echo "[START] Creating S3Local buckets: ${LOCAL_ICEBERG_S3_BUCKET_NAME}, ${LOCAL_MISC_S3_BUCKET_NAME}"
         mc alias set s3local ${LOCAL_S3_DOCKER_INTERNAL_ENDPOINT} ${LOCAL_S3_ACCESS_KEY} ${LOCAL_S3_SECRET_ACCESS_KEY}
-        /usr/bin/mc mb s3local/${LOCAL_ICEBERG_S3_BUCKET_NAME};
-        /usr/bin/mc mb s3local/${LOCAL_MISC_S3_BUCKET_NAME};
+        /usr/bin/mc mb --ignore-existing s3local/${LOCAL_ICEBERG_S3_BUCKET_NAME};
+        /usr/bin/mc mb --ignore-existing s3local/${LOCAL_MISC_S3_BUCKET_NAME};
         echo "[DONE] S3Local buckets created: ${LOCAL_ICEBERG_S3_BUCKET_NAME}, ${LOCAL_MISC_S3_BUCKET_NAME}"
 
   # Shiny for Python Frontend
