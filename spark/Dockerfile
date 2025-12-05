@@ -137,7 +137,6 @@ RUN _custom_jars_dir="${SPARK_HOME}/custom-jars/" \
     && chown -R root:root "$_custom_jars_dir" \
     && chmod -R +rX "$_custom_jars_dir"
 
-
 ARG VAST_SPARK_PLUGIN_ZIP_URL=https://github.com/vast-data/vast-db-connectors/releases/download/spark3-vast-3.5.1-e330d19e3523/spark3-vast-3.5.1-e330d19e3523.zip
 RUN \
   echo "[BUILD] Downloading/Unpacking VAST DB Spark Connector JAR's" \
@@ -150,7 +149,6 @@ RUN \
   && find "${__vast_trino_tmp_dir}" -type f -name "*.jar" -exec cp '{}' "${__vast_trino_plugin_dir}/" ';' \
   && rm -rf "${__vast_trino_tmp_dir}"
 
-
 ARG POSTGRES_JDBC_VERSION=42.7.8
 RUN \
     echo "[BUILD] Downloading PostgreSQL JDBC Driver" \
@@ -159,6 +157,15 @@ RUN \
     && wget -O "${__postgresql_jdbc_dir}/postgresql-${POSTGRES_JDBC_VERSION}.jar" "https://jdbc.postgresql.org/download/postgresql-${POSTGRES_JDBC_VERSION}.jar" \
     && chown root:root "${__postgresql_jdbc_dir}/postgresql-${POSTGRES_JDBC_VERSION}.jar" \
     && chmod 644 "${__postgresql_jdbc_dir}/postgresql-${POSTGRES_JDBC_VERSION}.jar"
+
+ARG TRINO_JDBC_VERSION=475
+RUN \
+    echo "[BUILD] Downloading Trino JDBC Driver" \
+    && __trino_jdbc_dir="${SPARK_HOME}/custom-jars" \
+    && mkdir -p "${__trino_jdbc_dir}" \
+    && wget -O "${__trino_jdbc_dir}/trino-jdbc-${TRINO_JDBC_VERSION}.jar" "https://repo1.maven.org/maven2/io/trino/trino-jdbc/${TRINO_JDBC_VERSION}/trino-jdbc-${TRINO_JDBC_VERSION}.jar" \
+    && chown root:root "${__trino_jdbc_dir}/trino-jdbc-${TRINO_JDBC_VERSION}.jar" \
+    && chmod 644 "${__trino_jdbc_dir}/trino-jdbc-${TRINO_JDBC_VERSION}.jar"
 
 ##############
 ### PYTHON SETUP
