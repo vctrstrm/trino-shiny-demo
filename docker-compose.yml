@@ -283,6 +283,8 @@ volumes:
   nessie-data:
   s3local-data:
   postgres-data:
+  spark-logs:
+  spark-events:
 
 networks:
   iceberg-net:
