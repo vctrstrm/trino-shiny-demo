@@ -72,32 +72,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # Hive Metastore (using PostgreSQL database)
-  hive-metastore:
-    image: apache/hive:4.0.0
-    container_name: hive-metastore
-    user: "0:0"
-    env_file:
-      - path: ./.default.env
-        required: true
-      - path: ./.env
-        required: false
-    environment:
-      - SERVICE_NAME=metastore
-      - IS_RESUME=false
-      - DB_DRIVER=postgres
-    ports:
-      - "${DOCKER_HOST_APP_BIND_ADDR}:9083:9083"
-    volumes:
-      - ./hive-site.xml:/opt/hive/conf/hive-site.xml
-      - ./warehouse:/data/warehouse
-      - ./hive/lib/postgresql-42.6.0.jar:/opt/hive/lib/postgresql-42.6.0.jar
-    networks:
-      - iceberg-net
-    depends_on:
-      postgres:
-        condition: service_healthy
-
   # Nessie metastore (alt to hive-metastore); Using embedded database (RocksDB).
   nessie:
     image: ghcr.io/projectnessie/nessie:${NESSIE_VERSION:-0.105.7}
@@ -136,7 +110,6 @@ services:
       - "${DOCKER_HOST_APP_BIND_ADDR}:8081:8080"
     volumes:
       - ./trino/config:/etc/trino
-      - ./warehouse:/data/warehouse
     ulimits:
       nofile:
         soft: 65536
@@ -148,27 +121,6 @@ services:
         condition: service_completed_successfully
       init-s3local-buckets:
         condition: service_completed_successfully
-    networks:
-      - iceberg-net
-
-  # Trino CLI (for easy access)
-  trino-cli:
-    image: *trino-image
-    platform: linux/amd64
-    container_name: trino-cli
-    env_file:
-      - path: ./.default.env
-        required: true
-      - path: ./.env
-        required: false
-    entrypoint: ["/bin/bash", "-c", "sleep infinity"]
-    depends_on:
-      trino:
-        condition: service_started
-      x-build-trino-image:
-        condition: service_completed_successfully
-    healthcheck:
-      disable: true
     networks:
       - iceberg-net
 
@@ -191,7 +143,6 @@ services:
       - "${DOCKER_HOST_APP_BIND_ADDR}:7077:7077"  # Spark Master
     volumes:
       - ./scripts:/scripts
-      - ./hive-site.xml:/opt/spark/conf/hive-site.xml
       - ./jars:/opt/spark/local-jars
     networks:
       - iceberg-net

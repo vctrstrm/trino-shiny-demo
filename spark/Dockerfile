@@ -155,12 +155,9 @@ RUN \
 ### PYTHON SETUP
 ##############
 
-ARG PYTHON_VERSION=3.11
-
 COPY --from=py_builder --chown=root:root /opt/python /opt/python
 COPY --from=py_builder --chown=root:root /opt/venv /opt/venv
 
 ENV PATH="/opt/venv/bin:${PATH}"
 ENV PYSPARK_PYTHON=/opt/venv/bin/python
 ENV PYSPARK_DRIVER_PYTHON=/opt/venv/bin/python
-
