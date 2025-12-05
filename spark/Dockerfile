@@ -151,6 +151,15 @@ RUN \
   && rm -rf "${__vast_trino_tmp_dir}"
 
 
+ARG POSTGRES_JDBC_VERSION=42.7.8
+RUN \
+    echo "[BUILD] Downloading PostgreSQL JDBC Driver" \
+    && __postgresql_jdbc_dir="${SPARK_HOME}/custom-jars" \
+    && mkdir -p "${__postgresql_jdbc_dir}" \
+    && wget -O "${__postgresql_jdbc_dir}/postgresql-${POSTGRES_JDBC_VERSION}.jar" "https://jdbc.postgresql.org/download/postgresql-${POSTGRES_JDBC_VERSION}.jar" \
+    && chown root:root "${__postgresql_jdbc_dir}/postgresql-${POSTGRES_JDBC_VERSION}.jar" \
+    && chmod 644 "${__postgresql_jdbc_dir}/postgresql-${POSTGRES_JDBC_VERSION}.jar"
+
 ##############
 ### PYTHON SETUP
 ##############
