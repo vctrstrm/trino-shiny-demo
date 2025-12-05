@@ -128,41 +128,40 @@ services:
 
   # Apache Spark with Iceberg support for branching
   spark:
-    image: *spark-image
+    container_name: spark
+    image: ${SPARK_IMAGE:-vast-spark:latest}
     platform: linux/amd64
-    container_name: spark-iceberg
-    user: "0:0"
+    hostname: spark
+    group_add:
+      - ${COMMON_INIT_GID:-7777}
+    ports:
+      - "${DOCKER_HOST_APP_BIND_ADDR}:${SPARK_MASTER_WEBUI_PORT}:${SPARK_MASTER_WEBUI_PORT}"
+      - "${DOCKER_HOST_APP_BIND_ADDR}:${SPARK_MASTER_PORT}:${SPARK_MASTER_PORT}"
+      - "${DOCKER_HOST_APP_BIND_ADDR}:${SPARK_WORKER_WEBUI_PORT}:${SPARK_WORKER_WEBUI_PORT}"
+      - "${DOCKER_HOST_APP_BIND_ADDR}:${SPARK_THRIFT_PORT}:${SPARK_THRIFT_PORT}"
+      - "${DOCKER_HOST_APP_BIND_ADDR}:${SPARK_CONNECT_PORT}:${SPARK_CONNECT_PORT}"
+      - "${DOCKER_HOST_APP_BIND_ADDR}:${SPARK_APP_UI_PORT}:${SPARK_APP_UI_PORT}"
+    volumes:
+      - type: volume
+        source: spark-logs
+        target: /opt/spark/logs
+        read_only: false
+      - type: volume
+        source: spark-events
+        target: /tmp/spark-events
+        read_only: false
+    networks:
+      - iceberg-net
     env_file:
       - path: ./.default.env
         required: true
       - path: ./.env
         required: false
-    environment:
-      - SPARK_MODE=master
-      - SPARK_MASTER_HOST=0.0.0.0
-    ports:
-      - "${DOCKER_HOST_APP_BIND_ADDR}:8082:8080"  # Spark UI (different from Trino)
-      - "${DOCKER_HOST_APP_BIND_ADDR}:7077:7077"  # Spark Master
-    volumes:
-      - ./scripts:/scripts
-      - ./jars:/opt/spark/local-jars
-    networks:
-      - iceberg-net
-    depends_on:
-      postgres:
-        condition: service_healthy
-      nessie:
-        condition: service_healthy
-      x-build-spark-image:
-        condition: service_completed_successfully
-    command:
-      - bash
-      - -c
-      - |
-        echo 'Starting Spark Master...'
-        /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master --host 0.0.0.0 --port 7077 --webui-port 8080 &
-        echo 'Spark Master started, keeping container alive...'
-        while true; do sleep 30; done
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   s3local:
     image: rustfs/rustfs:${RUSTFS_VERSION:-latest}

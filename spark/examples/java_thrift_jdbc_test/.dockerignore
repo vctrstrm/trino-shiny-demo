@@ -1,0 +1,7 @@
+./examples/
+tmp/
+temp/
+.venv/
+logs/
+__pycache__/
+target/

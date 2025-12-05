@@ -1,0 +1,6 @@
+./examples/
+tmp/
+temp/
+.venv/
+logs/
+__pycache__/
