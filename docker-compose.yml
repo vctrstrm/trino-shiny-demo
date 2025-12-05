@@ -62,7 +62,7 @@ services:
     volumes:
       - type: volume
         source: postgres-data
-        target: /var/lib/postgresql/data
+        target: /var/lib/postgresql
         read_only: false
     networks:
       - iceberg-net
