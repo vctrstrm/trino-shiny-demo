@@ -129,7 +129,7 @@ services:
   # Apache Spark with Iceberg support for branching
   spark:
     container_name: spark
-    image: ${SPARK_IMAGE:-vast-spark:latest}
+    image: *spark-image
     platform: linux/amd64
     hostname: spark
     group_add:
