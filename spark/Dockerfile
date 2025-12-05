@@ -78,7 +78,7 @@ RUN --mount=type=tmpfs,target=/tmp \
     && rm -f /tmp/install_uv.sh
 
 # check for versions here: https://raw.githubusercontent.com/aws/aws-cli/v2/CHANGELOG.rst
-ARG AWS_CLI_VERSION=2.32.9
+ARG AWS_CLI_VERSION=2.32.10
 # todo: add support for other os/arch combos
 RUN --mount=type=tmpfs,target=/tmp \
     wget -O /tmp/awscliv2.zip \

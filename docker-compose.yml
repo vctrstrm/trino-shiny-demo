@@ -35,7 +35,7 @@ services:
         - NESSIE_VERSION=${NESSIE_VERSION:-0.105.7}
         - SPARK_VERSION=${SPARK_VERSION:-3.5.7}
         - UV_VERSION=0.9.15
-        - AWS_CLI_VERSION=2.32.9
+        - AWS_CLI_VERSION=2.32.10
         - PYTHON_VERSION=${PYTHON_VERSION:-3.11}
         - VAST_SPARK_PLUGIN_ZIP_URL=${VAST_SPARK_PLUGIN_ZIP_URL:-https://github.com/vast-data/vast-db-connectors/releases/download/spark3-vast-3.5.1-e330d19e3523/spark3-vast-3.5.1-e330d19e3523.zip}
     network_mode: bridge
