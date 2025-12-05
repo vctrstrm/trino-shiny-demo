@@ -99,6 +99,23 @@ function ensure_trino_cli() (
 	fi
 )
 
+function ensure_nessie_cli() (
+	set -o nounset -o errexit -o pipefail
+
+	local nessie_cli_url="https://github.com/projectnessie/nessie/releases/download/nessie-${NESSIE_VERSION}/nessie-cli-${NESSIE_VERSION}-runner.jar"
+	local nessie_cli_jar_path="${BIN_ROOT}/nessie-cli"
+
+	if ! [[ -f "${nessie_cli_jar_path}" ]]; then
+		echo "[INFO] Downloading Nessie CLI"
+		curl -fsSL -o "${nessie_cli_jar_path}" "${nessie_cli_url}"
+		chmod +x "${nessie_cli_jar_path}"
+	fi
+
+	if ! command -v java >/dev/null 2>&1; then
+		echo "[WARNING] 'java' is not installed or not in PATH. The local Nessie CLI client outside of Docker may not work." >&2
+	fi
+)
+
 function ensure_bin_dir() (
 	set -o nounset -o errexit -o pipefail
 
@@ -134,6 +151,7 @@ function main() (
 
 	ensure_bin_dir
 	ensure_trino_cli
+	ensure_nessie_cli
   init_env_file
 
 	echo "[INFO] Done."
