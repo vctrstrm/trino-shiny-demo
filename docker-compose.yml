@@ -5,7 +5,7 @@ services:
   #### -- pseudo services used to build the images
 
   x-build-trino-image:
-    image: &trino-image "${TRINO_IMAGE:-vast-trino:${TRINO_VERSION}}"
+    image: &trino-image "${TRINO_IMAGE:-vast-trino:${TRINO_VERSION:-475}}"
     platform: linux/amd64
     container_name: x-build-trino-image
     build:
@@ -47,27 +47,27 @@ services:
   #### RUN SERVICES
   #### -- actual services that run the stack
 
-  # PostgreSQL database for Hive Metastore
+  # Local PostgresDB for experiments
   postgres:
-    image: postgres:15
+    image: postgres:${POSTGRES_VERSION:-18.1}
     container_name: postgres
-    ports:
-      - "${DOCKER_HOST_APP_BIND_ADDR}:5432:5432"
+    restart: unless-stopped
     env_file:
       - path: ./.default.env
         required: true
       - path: ./.env
         required: false
-    environment:
-      POSTGRES_DB: metastore
-      POSTGRES_USER: hive
-      POSTGRES_PASSWORD: hive123
+    ports:
+      - "${DOCKER_HOST_APP_BIND_ADDR}:${POSTGRES_DOCKER_EXTERNAL_PORT}:${POSTGRES_DOCKER_INTERNAL_PORT}"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - type: volume
+        source: postgres-data
+        target: /var/lib/postgresql/data
+        read_only: false
     networks:
       - iceberg-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hive -d metastore"]
+      test: ["CMD", "pg_isready", "-U", "postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -115,8 +115,10 @@ services:
         soft: 65536
         hard: 65536
     depends_on:
-      hive-metastore:
-        condition: service_started
+      postgres:
+        condition: service_healthy
+      nessie:
+        condition: service_healthy
       x-build-trino-image:
         condition: service_completed_successfully
       init-s3local-buckets:
@@ -147,8 +149,10 @@ services:
     networks:
       - iceberg-net
     depends_on:
-      hive-metastore:
-        condition: service_started
+      postgres:
+        condition: service_healthy
+      nessie:
+        condition: service_healthy
       x-build-spark-image:
         condition: service_completed_successfully
     command:
@@ -277,9 +281,9 @@ services:
     # The actual deploy command will be passed by make
 
 volumes:
-  postgres-data:
   nessie-data:
   s3local-data:
+  postgres-data:
 
 networks:
   iceberg-net:
